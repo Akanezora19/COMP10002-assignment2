@@ -102,7 +102,7 @@ typedef struct {                // an automaton consists of
 int mygetchar(void);            // getchar() that skips carriage returns
 int read_input(word_t one_line);
 automaton_t *init_automaton(void);
-node_t *insert_node(state_t *current_state, char *str);
+node_t *insert_node(state_t *current_state, char ch);
 void insert_state(automaton_t *automaton, node_t *node);
 void insert_statement(automaton_t *automaton, char* statement);
 unsigned int state_num(state_t *state); 
@@ -142,7 +142,7 @@ int main(int argc, char *argv[]) {
     printf(SDELIM, 0);
     printf("Number of statements: %d\n", lineno);
     printf("Number of characters: %d\n", total_char);
-    printf("Number of statements: %d\n", state_num(current_state));
+    //printf("Number of statements: %d\n", state_num(current_state));
 
     /* Stage 1 */
     printf(SDELIM, 1);
@@ -162,15 +162,6 @@ int mygetchar() {
 }
 
 /* MY FUNCTIONS --------------------------------------------------------------*/
-
-automaton_t
-*init_automaton(void) {
-    automaton_t *automaton = (automaton_t *)malloc(sizeof(automaton));
-    assert(automaton != NULL);
-    automaton->ini = NULL;
-    automaton->nid = 1;
-    return automaton;
-}
 
 /* reading input, return false if there is no input, otherwise return true */
 int
@@ -207,19 +198,31 @@ is_element_in_auto(automaton_t *automaton, char *str) {
     return 0;
 }
 
+
+automaton_t
+*init_automaton(void) {
+    automaton_t *automaton = (automaton_t *)malloc(sizeof(automaton));
+    assert(automaton != NULL);
+    automaton->ini = NULL;
+    automaton->nid = 1;
+    return automaton;
+}
+
+
 // insert node at foot
 node_t 
-*insert_node(state_t *current_state, char *str) {
+*insert_node(state_t *current_state, char ch) {
     node_t *new_node = current_state->outputs->head;
-    while (new_node && strcmp(new_node->str, str) != 0) {
+    while (new_node && new_node->str[0] != ch) {
         new_node = new_node->next;
     }
 
     if (new_node == NULL) {
         // Create a new transition
         new_node = (node_t*) malloc(sizeof(node_t));
-        new_node->str = (char*) malloc(strlen(str) * sizeof(char));
-        strcpy(new_node->str, str);
+        new_node->str = (char*) malloc(1+sizeof(char));
+        new_node->str[0] = ch;
+        new_node->str[1] = '\0';
         new_node->state = NULL;  // We'll set the state in insert_state function
         new_node->next = NULL;
 
