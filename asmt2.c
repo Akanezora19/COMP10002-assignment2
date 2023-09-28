@@ -102,8 +102,10 @@ typedef struct {                // an automaton consists of
 int mygetchar(void);            // getchar() that skips carriage returns
 int read_input(word_t one_line);
 automaton_t *init_automaton(void);
-node_t *insert_node(char *str);
-state_t *insert_state(automaton_t *automaton);
+node_t *insert_node(state_t *current_state, char *str);
+void insert_state(automaton_t *automaton, node_t *node);
+void insert_statement(automaton_t *automaton, char* statement);
+unsigned int state_num(state_t *state); 
 
 
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
@@ -130,20 +132,17 @@ int main(int argc, char *argv[]) {
 
     // 2. set up the start state and then insert states and nodes
     automaton_t *automaton = init_automaton();
-    node_t *current_node = NULL;
     state_t *current_state = automaton->ini;
 
     for (int i = 0; i < lineno; i++) {
-        for (int j = 0; all_lines[i][j] && all_lines[i][j] != ' ' &&  j++) {
-            current_node = insert_node(all_lines[i][j]);
-        }
+        insert_statement(automaton, all_lines[i]);
     }
 
     // 3.print the information
     printf(SDELIM, 0);
     printf("Number of statements: %d\n", lineno);
     printf("Number of characters: %d\n", total_char);
-    printf("Number of statements: (to be continued)\n");
+    printf("Number of statements: %d\n", state_num(current_state));
 
     /* Stage 1 */
     printf(SDELIM, 1);
@@ -208,46 +207,77 @@ is_element_in_auto(automaton_t *automaton, char *str) {
     return 0;
 }
 
-// insert node at foot and link them together
+// insert node at foot
 node_t 
-*insert_node(char *str) {
-    node_t *new_node = (node_t *)malloc(sizeof(*new_node));
-    DUMP_STR(str);
-    assert(new_node != NULL);
-    new_node->str = strdup(str);
-    new_node->state = NULL;
-    new_node->next = NULL;
-    
+*insert_node(state_t *current_state, char *str) {
+    node_t *new_node = current_state->outputs->head;
+    while (new_node && strcmp(new_node->str, str) != 0) {
+        new_node = new_node->next;
+    }
 
+    if (new_node == NULL) {
+        // Create a new transition
+        new_node = (node_t*) malloc(sizeof(node_t));
+        new_node->str = (char*) malloc(strlen(str) * sizeof(char));
+        strcpy(new_node->str, str);
+        new_node->state = NULL;  // We'll set the state in insert_state function
+        new_node->next = NULL;
 
-
+        // Add the new transition to the current state's outputs
+        if (current_state->outputs->head == NULL) {
+            current_state->outputs->head = new_node;
+            current_state->outputs->tail = new_node;
+        } else {
+            current_state->outputs->tail->next = new_node;
+            current_state->outputs->tail = new_node;
+        }        
+    }
     return new_node;
-} 
+}
 
 // insert at foot
-state_t
-*insert_state(automaton_t *automaton) {
+void
+insert_state(automaton_t *automaton, node_t *node) {
     assert(automaton != NULL);
     // set up id and frequency
     state_t *new_state = (state_t *)malloc(sizeof(*new_state));
     assert(new_state != NULL);
-    if (automaton->ini == NULL) {
-        // this is the first insertion into the automaton 
-        new_state->id = 0;
-        new_state->freq = 1;
-        automaton->ini = new_state;
-    } else {
+    if (node->state == NULL) {
+        node->state = new_state;
         new_state->id = automaton->nid++;
+        new_state->freq = 1;
+        new_state->visited = 0;
+        new_state->outputs->head = new_state->outputs->tail = NULL;
+    } else {
+        node->state->freq++;
     }
-    new_state->visited = 0;
+}
 
-    // initialise the output pointers
-    new_state->outputs = (list_t *)malloc(sizeof(list_t));
-    assert(new_state->outputs != NULL);
-    new_state->outputs->head = NULL;
-    new_state->outputs->tail = NULL;
+// insert a statement into the automaton
+void
+insert_statement(automaton_t *automaton, char* statement) {
+    state_t *current_state = automaton->ini;
+    current_state->freq++;
 
-    return new_state;
+    for (int i = 0; statement[i] != '\0'; i++) {
+        node_t *node = insert_node(current_state, statement[i]);
+        insert_state(automaton, node);
+        current_state = node->state;
+    }
+}
+
+// count the total numbers of states in the automaton
+unsigned int state_num(state_t *state) {
+    if (state == NULL || state->visited == 1) return 0;
+    state->visited = 1;
+
+    unsigned int count = 1;
+    node_t* node = state->outputs->head;
+    while (node) {
+        count += state_num(node->state);
+        node = node->next;
+    }
+    return count;
 }
 
 /* THE END -------------------------------------------------------------------*/
