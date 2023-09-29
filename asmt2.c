@@ -139,7 +139,7 @@ int main(int argc, char *argv[]) {
     printf(SDELIM, 0);
     printf("Number of statements: %d\n", lineno);
     printf("Number of characters: %d\n", total_char);
-    printf("Number of statements: %d\n", state_num(automaton));
+    printf("Number of states: %d\n", state_num(automaton));
 
     /* Stage 1 */
     printf(SDELIM, 1);
