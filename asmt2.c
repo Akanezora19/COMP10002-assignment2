@@ -105,7 +105,7 @@ automaton_t *init_automaton(void);
 node_t *insert_node(state_t *current_state, char ch);
 void insert_state(automaton_t *automaton, node_t *node);
 void insert_statement(automaton_t *automaton, char **statement, int lineno);
-unsigned int state_num(state_t *state); 
+unsigned int state_num(automaton_t *automaton); 
 
 
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
@@ -139,7 +139,7 @@ int main(int argc, char *argv[]) {
     printf(SDELIM, 0);
     printf("Number of statements: %d\n", lineno);
     printf("Number of characters: %d\n", total_char);
-    printf("Number of statements: %d\n", state_num(automaton->ini));
+    printf("Number of statements: %d\n", state_num(automaton));
 
     /* Stage 1 */
     printf(SDELIM, 1);
@@ -165,11 +165,8 @@ int
 read_input(word_t one_line) {
     int i = 0, ch;
     // read input and adjust memory size if needed
-    while (((ch = mygetchar()) != EOF) && (ch != '\n')) {
+    while (((ch = mygetchar()) != EOF) && (ch != '\n') && i <= MAXCHARS) {
         one_line[i++] = ch;
-        if (i == MAXCHARS - 1) {
-            break;
-        }
     }
     one_line[i] = '\0';
     // if no input or just a single new line character, return false
@@ -220,20 +217,20 @@ node_t
     }
 
     if (new_node == NULL) {
-        // Create a new transition
+        // allocate memory for each component
         new_node = (node_t*)malloc(sizeof(node_t));
         assert(new_node != NULL);
         new_node->str = (char*)malloc(1+sizeof(char));
         assert(new_node->str != NULL);
         new_node->state = (state_t *)malloc(sizeof(state_t));
         assert(new_node->state != NULL);
-       
+        // initialise everything
         new_node->str[0] = ch;
         new_node->str[1] = '\0';
-        new_node->state = NULL;  // We'll set the state in insert_state function
+        new_node->state = NULL; 
         new_node->next = NULL;
 
-        // Add the new transition to the current state's outputs
+        // Add the node to the current state's outputs
         if (current_state->outputs->head == NULL) {
             current_state->outputs->head = new_node;
             current_state->outputs->tail = new_node;
@@ -280,17 +277,8 @@ insert_statement(automaton_t *automaton, char **statement, int lineno) {
 }
 
 // count the total numbers of states in the automaton
-unsigned int state_num(state_t *state) {
-    if (state == NULL || state->visited == 1) return 0;
-    state->visited = 1;
-
-    unsigned int count = 1;
-    node_t* node = state->outputs->head;
-    while (node) {
-        count += state_num(node->state);
-        node = node->next;
-    }
-    return count;
+unsigned int state_num(automaton_t *automaton) {
+    return automaton->nid;
 }
 
 /* THE END -------------------------------------------------------------------*/
