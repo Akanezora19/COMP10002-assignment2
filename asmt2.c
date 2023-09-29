@@ -104,7 +104,7 @@ int read_input(word_t one_line);
 automaton_t *init_automaton(void);
 node_t *insert_node(state_t *current_state, char ch);
 void insert_state(automaton_t *automaton, node_t *node);
-void insert_statement(automaton_t *automaton, char* statement);
+void insert_statement(automaton_t *automaton, char **statement, int lineno);
 unsigned int state_num(state_t *state); 
 
 
@@ -132,17 +132,14 @@ int main(int argc, char *argv[]) {
 
     // 2. set up the start state and then insert states and nodes
     automaton_t *automaton = init_automaton();
-    state_t *current_state = automaton->ini;
+    insert_statement(automaton, all_lines, lineno);
 
-    for (int i = 0; i < lineno; i++) {
-        insert_statement(automaton, all_lines[i]);
-    }
 
     // 3.print the information
     printf(SDELIM, 0);
     printf("Number of statements: %d\n", lineno);
     printf("Number of characters: %d\n", total_char);
-    //printf("Number of statements: %d\n", state_num(current_state));
+    printf("Number of statements: %d\n", state_num(automaton->ini));
 
     /* Stage 1 */
     printf(SDELIM, 1);
@@ -201,9 +198,14 @@ is_element_in_auto(automaton_t *automaton, char *str) {
 
 automaton_t
 *init_automaton(void) {
-    automaton_t *automaton = (automaton_t *)malloc(sizeof(automaton));
+    automaton_t *automaton = (automaton_t *)malloc(sizeof(*automaton));
     assert(automaton != NULL);
-    automaton->ini = NULL;
+    automaton->ini = (state_t *)malloc(sizeof(state_t));
+    assert(automaton->ini != NULL);
+    automaton->ini->outputs = (list_t *)malloc(sizeof(list_t));
+    assert(automaton->ini->outputs != NULL);
+    automaton->ini->outputs->head = NULL;
+    automaton->ini->outputs->tail = NULL;
     automaton->nid = 1;
     return automaton;
 }
@@ -213,14 +215,19 @@ automaton_t
 node_t 
 *insert_node(state_t *current_state, char ch) {
     node_t *new_node = current_state->outputs->head;
-    while (new_node && new_node->str[0] != ch) {
+    while (new_node != NULL && new_node->str[0] != ch) {
         new_node = new_node->next;
     }
 
     if (new_node == NULL) {
         // Create a new transition
-        new_node = (node_t*) malloc(sizeof(node_t));
-        new_node->str = (char*) malloc(1+sizeof(char));
+        new_node = (node_t*)malloc(sizeof(node_t));
+        assert(new_node != NULL);
+        new_node->str = (char*)malloc(1+sizeof(char));
+        assert(new_node->str != NULL);
+        new_node->state = (state_t *)malloc(sizeof(state_t));
+        assert(new_node->state != NULL);
+       
         new_node->str[0] = ch;
         new_node->str[1] = '\0';
         new_node->state = NULL;  // We'll set the state in insert_state function
@@ -243,9 +250,12 @@ void
 insert_state(automaton_t *automaton, node_t *node) {
     assert(automaton != NULL);
     // set up id and frequency
-    state_t *new_state = (state_t *)malloc(sizeof(*new_state));
-    assert(new_state != NULL);
     if (node->state == NULL) {
+        state_t *new_state = (state_t *)malloc(sizeof(*new_state));
+        assert(new_state != NULL);
+        new_state->outputs = (list_t *)malloc(sizeof(list_t));
+        assert(new_state->outputs != NULL);
+
         node->state = new_state;
         new_state->id = automaton->nid++;
         new_state->freq = 1;
@@ -258,14 +268,14 @@ insert_state(automaton_t *automaton, node_t *node) {
 
 // insert a statement into the automaton
 void
-insert_statement(automaton_t *automaton, char* statement) {
-    state_t *current_state = automaton->ini;
-    current_state->freq++;
-
-    for (int i = 0; statement[i] != '\0'; i++) {
-        node_t *node = insert_node(current_state, statement[i]);
-        insert_state(automaton, node);
-        current_state = node->state;
+insert_statement(automaton_t *automaton, char **statement, int lineno) {
+    for (int i = 0; i < lineno; i++) {
+        state_t *current_state = automaton->ini;
+        for (int j = 0; statement[i][j] != '\0'; j++) {
+            node_t *node = insert_node(current_state, statement[i][j]);
+            insert_state(automaton, node);
+            current_state = node->state;
+        }
     }
 }
 
