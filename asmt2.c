@@ -113,6 +113,7 @@ unsigned int state_num(automaton_t *automaton);
 node_t *find_node(state_t *state, char ch);
 void process_prompt(automaton_t *automaton, char *prompt);
 node_t *next_most_freq_node(state_t *state);
+void print_truncated_part(int index, char ch);
 
 
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
@@ -131,8 +132,9 @@ int main(int argc, char *argv[]) {
             all_lines = realloc(all_lines, current_size * sizeof(*all_lines));
             assert(all_lines != NULL);
         }
-        all_lines[lineno] = strdup(one_line);
-        assert(all_lines[lineno]);
+        all_lines[lineno] = (char *)malloc(strlen(one_line) + 1);
+        assert(all_lines[lineno] != NULL);
+        strcpy(all_lines[lineno], one_line);
         total_char += strlen(all_lines[lineno]);
         lineno++;
     }
@@ -190,22 +192,6 @@ read_input(word_t one_line) {
     // input read successfully, return true
     return 1;
 }
-
-int
-is_element_in_auto(automaton_t *automaton, char *str) {
-    state_t *current = automaton->ini;
-    while (current != NULL) {
-        node_t *node = current->outputs->head;
-        while (node != NULL) {
-            if (strcmp(node->str, str) == 0) {
-                return 1;
-            }
-            node = node->next;
-        }
-    }
-    return 0;
-}
-
 
 automaton_t
 *init_automaton(void) {
@@ -298,6 +284,23 @@ initialise(word_t one_line) {
     }
 }
 
+// Helper function of stage 1, print the part that needs to be truncated
+void
+print_truncated_part(int index, char ch) {
+    printf("%c", ch);
+    if (index + strlen(ELLIPSES) < TRUNCATE) {
+        printf(ELLIPSES);
+    } else {
+        // go to next index to drop one ellipse
+        index++;
+        while (index < TRUNCATE) {
+            printf(ELLIPSE);
+            index++;
+        }
+    }
+    printf("\n");
+}
+
 void
 process_prompt(automaton_t *automaton, char *prompt) {
     // 1. replay the prompt
@@ -307,12 +310,7 @@ process_prompt(automaton_t *automaton, char *prompt) {
         node_t *next_node = find_node(current_state, prompt[i]);
         // if a character is not in the automaton, exit the replay
         if (next_node == NULL) {
-            printf("%c", prompt[i]);
-            while (i++ < TRUNCATE) {
-                printf(ELLIPSE);
-                i++;
-            }
-            printf("\n");
+            print_truncated_part(i, prompt[i]);
             return;
         }
         // if the output reach the truncate limit, exit the replay
@@ -320,7 +318,6 @@ process_prompt(automaton_t *automaton, char *prompt) {
             printf("\n");
             return;
         }
-
         printf("%c", prompt[i]);
         current_state->freq++;
         current_state = next_node->state;
@@ -356,16 +353,18 @@ node_t
     return NULL;
 }
 
-// generate characters on the walk until leaf state by the most frequent one,
-// if same frequency, then get the one that is ASCIIbetically greater
+// return node on the walk until leaf state by the most frequent one, if same 
+// frequency, then get the one that is ASCIIbetically greater
 node_t
 *next_most_freq_node(state_t *state) {
     node_t *current_node = state->outputs->head;
     node_t *most_freq_node = current_node;
     while (current_node != NULL) {
+        // compare frequency
         if (current_node->state->freq > most_freq_node->state->freq) {
             most_freq_node = current_node;
         } 
+        // frequency the same, compare their ASCII character
         if (current_node->state->freq == most_freq_node->state->freq 
             && current_node->str[0] > most_freq_node->str[0]) {
             most_freq_node = current_node;
