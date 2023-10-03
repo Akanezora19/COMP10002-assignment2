@@ -109,6 +109,7 @@ node_t *insert_node(state_t *current_state, char ch);
 void insert_state(automaton_t *automaton, node_t *node);
 void initialise(word_t one_line);
 void insert_statement(automaton_t *automaton, char **statement, int lineno);
+void print_stage0_info(int lineno, int total_char, automaton_t *automaton);
 unsigned int state_num(automaton_t *automaton);
 node_t *find_node(state_t *state, char ch);
 void process_prompt(automaton_t *automaton, char *prompt);
@@ -145,9 +146,7 @@ int main(int argc, char *argv[]) {
 
     // 3.print the information
     printf(SDELIM, 0);
-    printf(NOSFMT, lineno);
-    printf(NOCFMT, total_char);
-    printf(NPSFMT, state_num(automaton));
+    print_stage0_info(lineno, total_char, automaton);
 
     /* Stage 1 */
     // 1. replay the prompt in the automaton
@@ -282,6 +281,13 @@ initialise(word_t one_line) {
     for (int i = 0; i < MAXCHARS; i++) {
         one_line[i] = '\0';
     }
+}
+
+void
+print_stage0_info(int lineno, int total_char, automaton_t *automaton) {
+    printf(NOSFMT, lineno);
+    printf(NOCFMT, total_char);
+    printf(NPSFMT, state_num(automaton));
 }
 
 // Helper function of stage 1, print the part that needs to be truncated
