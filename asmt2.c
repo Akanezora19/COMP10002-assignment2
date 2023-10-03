@@ -317,11 +317,11 @@ process_prompt(automaton_t *automaton, char *prompt) {
         }
         // if the output reach the truncate limit, exit the replay
         if (i >= TRUNCATE) {
+            printf("\n");
             return;
         }
 
         printf("%c", prompt[i]);
-        printf(ELLIPSES);
         current_state->freq++;
         current_state = next_node->state;
     }
