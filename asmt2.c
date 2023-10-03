@@ -115,41 +115,24 @@ node_t *find_node(state_t *state, char ch);
 void process_prompt(automaton_t *automaton, char *prompt);
 node_t *next_most_freq_node(state_t *state);
 void print_truncated_part(int index, char ch);
+char **read_stage0_lines(int *lineno, int *total_char, word_t one_line);
 
 
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
 int main(int argc, char *argv[]) {
     /* Stage 0 */
     word_t one_line;
-    int lineno = 0, total_char = 0;
-    size_t current_size = MAXCHARS;
-    char **all_lines = (char **)malloc(current_size * sizeof(*all_lines));
-    assert(all_lines != NULL);
-
+    int lineno, total_char;
     // 1.read statements from the input
-    while (read_input(one_line)) {
-        if (lineno == current_size) {
-            current_size *= 2;
-            all_lines = realloc(all_lines, current_size * sizeof(*all_lines));
-            assert(all_lines != NULL);
-        }
-        all_lines[lineno] = (char *)malloc(strlen(one_line) + 1);
-        assert(all_lines[lineno] != NULL);
-        strcpy(all_lines[lineno], one_line);
-        total_char += strlen(all_lines[lineno]);
-        lineno++;
-    }
-
+    char **all_lines = read_stage0_lines(&lineno, &total_char, one_line);
     // 2. set up the start state and then insert states and nodes
     automaton_t *automaton = init_automaton();
     insert_statement(automaton, all_lines, lineno);
-
     // 3.print the information
     printf(SDELIM, 0);
     print_stage0_info(lineno, total_char, automaton);
 
     /* Stage 1 */
-    // 1. replay the prompt in the automaton
     printf(SDELIM, 1);
     while (read_input(one_line)) {
         process_prompt(automaton, one_line);
@@ -172,12 +155,34 @@ int mygetchar() {
 
 /* MY FUNCTIONS --------------------------------------------------------------*/
 
-/* reading input, return false if there is no input, otherwise return true */
+char
+**read_stage0_lines(int *lineno, int *total_char, word_t one_line) {
+    *lineno = 0;
+    *total_char = 0;
+    size_t current_size = MAXCHARS;
+    char **all_lines = (char **)malloc(current_size * sizeof(*all_lines));
+    assert(all_lines != NULL);
+    while (read_input(one_line)) {
+        if (*lineno == current_size) {
+            current_size *= 2;
+            all_lines = realloc(all_lines, current_size * sizeof(*all_lines));
+            assert(all_lines != NULL);
+        }
+        all_lines[*lineno] = (char *)malloc(strlen(one_line) + 1);
+        assert(all_lines[*lineno] != NULL);
+        strcpy(all_lines[*lineno], one_line);
+        *total_char += strlen(all_lines[*lineno]);
+        (*lineno)++;
+    }
+    return all_lines;
+}
+
+// reading input, return false if there is no input, otherwise return true 
 int
 read_input(word_t one_line) {
     // reset the one_line buffer before it reads
     initialise(one_line);
-
+    
     int i = 0, ch;
     // read input and adjust memory size if needed
     while (((ch = mygetchar()) != EOF) && (ch != '\n') && i <= MAXCHARS) {
