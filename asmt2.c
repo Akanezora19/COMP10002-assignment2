@@ -54,6 +54,9 @@
 
 #define CRTRNC '\r'                             // carriage return character
 #define MAXCHARS 1000  // maximum characters per word
+#define ELLIPSE "." // ellipse used in stage 1
+#define ELLIPSES "..." // ellipses used in stage 1
+#define TRUNCATE 37 // number of characters to be truncated in stage 1
 
 /* Debugging area */
 #define DEBUG 1
@@ -104,8 +107,12 @@ int read_input(word_t one_line);
 automaton_t *init_automaton(void);
 node_t *insert_node(state_t *current_state, char ch);
 void insert_state(automaton_t *automaton, node_t *node);
+void initialise(word_t one_line);
 void insert_statement(automaton_t *automaton, char **statement, int lineno);
-unsigned int state_num(automaton_t *automaton); 
+unsigned int state_num(automaton_t *automaton);
+node_t *find_node(state_t *state, char ch);
+void process_prompt(automaton_t *automaton, char *prompt);
+node_t *next_most_freq_node(state_t *state);
 
 
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
@@ -141,7 +148,12 @@ int main(int argc, char *argv[]) {
     printf(NPSFMT, state_num(automaton));
 
     /* Stage 1 */
+    // 1. replay the prompt in the automaton
     printf(SDELIM, 1);
+    while (read_input(one_line)) {
+        process_prompt(automaton, one_line);
+    }
+
     /* Stage 2 */
     printf(SDELIM, 2);
     return EXIT_SUCCESS;        // algorithms are fun!!!
@@ -162,6 +174,9 @@ int mygetchar() {
 /* reading input, return false if there is no input, otherwise return true */
 int
 read_input(word_t one_line) {
+    // reset the one_line buffer before it reads
+    initialise(one_line);
+
     int i = 0, ch;
     // read input and adjust memory size if needed
     while (((ch = mygetchar()) != EOF) && (ch != '\n') && i <= MAXCHARS) {
@@ -274,6 +289,92 @@ insert_statement(automaton_t *automaton, char **statement, int lineno) {
         }
     }
 }
+
+// initialise the buffer array
+void
+initialise(word_t one_line) {
+    for (int i = 0; i < MAXCHARS; i++) {
+        one_line[i] = '\0';
+    }
+}
+
+void
+process_prompt(automaton_t *automaton, char *prompt) {
+    // 1. replay the prompt
+    state_t *current_state = automaton->ini;
+    int i;
+    for (i = 0; prompt[i] != '\0'; i++) {
+        node_t *next_node = find_node(current_state, prompt[i]);
+        // if a character is not in the automaton, exit the replay
+        if (next_node == NULL) {
+            printf("%c", prompt[i]);
+            while (i++ < TRUNCATE) {
+                printf(ELLIPSE);
+                i++;
+            }
+            printf("\n");
+            return;
+        }
+        // if the output reach the truncate limit, exit the replay
+        if (i >= TRUNCATE) {
+            return;
+        }
+
+        printf("%c", prompt[i]);
+        printf(ELLIPSES);
+        current_state->freq++;
+        current_state = next_node->state;
+    }
+    
+    // 2. print ellipses 
+    printf(ELLIPSES);
+    i += strlen(ELLIPSES);
+
+    // 3. do the trace of the automaton to generate text
+    while (current_state->outputs->head != NULL && i < TRUNCATE) {
+        node_t *next_node = next_most_freq_node(current_state);
+        printf("%c", next_node->str[0]);
+        current_state = next_node->state;
+        i++;
+    }
+    printf("\n");
+}
+
+// find the correct node given the input characters
+node_t
+*find_node(state_t *state, char ch) {
+    node_t *current_node = state->outputs->head;
+    while (current_node != NULL) {
+        // this is the right node, found it!
+        if (current_node->str[0] == ch) {
+            return current_node;
+        }
+        // not this one, go next
+        current_node = current_node->next;
+    }
+    // process through all the nodes, nothing found
+    return NULL;
+}
+
+// generate characters on the walk until leaf state by the most frequent one,
+// if same frequency, then get the one that is ASCIIbetically greater
+node_t
+*next_most_freq_node(state_t *state) {
+    node_t *current_node = state->outputs->head;
+    node_t *most_freq_node = current_node;
+    while (current_node != NULL) {
+        if (current_node->state->freq > most_freq_node->state->freq) {
+            most_freq_node = current_node;
+        } 
+        if (current_node->state->freq == most_freq_node->state->freq 
+            && current_node->str[0] > most_freq_node->str[0]) {
+            most_freq_node = current_node;
+        }
+        current_node = current_node->next;
+    }
+    return most_freq_node;
+}
+
 
 // count the total numbers of states in the automaton
 unsigned int state_num(automaton_t *automaton) {
