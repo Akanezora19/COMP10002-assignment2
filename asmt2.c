@@ -116,6 +116,10 @@ void process_prompt(automaton_t *automaton, char *prompt);
 node_t *next_most_freq_node(state_t *state);
 void print_truncated_part(int index, char ch);
 char **read_stage0_lines(int *lineno, int *total_char, word_t one_line);
+int read_num_compression(void);
+void print_stage2_info(automaton_t *automaton);
+int count_total_freq(automaton_t *automaton);
+void do_compression(automaton_t *automaton, int num_compression);
 
 
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
@@ -139,7 +143,23 @@ int main(int argc, char *argv[]) {
     }
 
     /* Stage 2 */
+    // 1. read the number of compression steps
+    int num_compression = read_num_compression();
+    DUMP_INT(num_compression);
+    // 2. do the compression
+
+
+
+    // 3. output the results
     printf(SDELIM, 2);
+    print_stage2_info(automaton);
+    printf(MDELIM);
+    // 4. process the prompt
+
+
+
+ 
+
     return EXIT_SUCCESS;        // algorithms are fun!!!
 }
 
@@ -153,8 +173,7 @@ int mygetchar() {
     return c;
 }
 
-/* MY FUNCTIONS --------------------------------------------------------------*/
-
+/* ------------------------------- STAGE 0 -----------------------------------*/
 char
 **read_stage0_lines(int *lineno, int *total_char, word_t one_line) {
     *lineno = 0;
@@ -177,6 +196,7 @@ char
     return all_lines;
 }
 
+
 // reading input, return false if there is no input, otherwise return true 
 int
 read_input(word_t one_line) {
@@ -195,6 +215,14 @@ read_input(word_t one_line) {
     }
     // input read successfully, return true
     return 1;
+}
+
+// initialise the buffer array
+void
+initialise(word_t one_line) {
+    for (int i = 0; i < MAXCHARS; i++) {
+        one_line[i] = '\0';
+    }
 }
 
 automaton_t
@@ -259,7 +287,7 @@ insert_state(automaton_t *automaton, node_t *node) {
 
         node->state = new_state;
         new_state->id = automaton->nid++;
-        new_state->freq = 1;
+        new_state->freq = 1; // minus number of leaf states at the end 
         new_state->visited = 0;
         new_state->outputs->head = new_state->outputs->tail = NULL;
     } else {
@@ -280,20 +308,20 @@ insert_statement(automaton_t *automaton, char **statement, int lineno) {
     }
 }
 
-// initialise the buffer array
-void
-initialise(word_t one_line) {
-    for (int i = 0; i < MAXCHARS; i++) {
-        one_line[i] = '\0';
-    }
-}
-
+// print the stage0 informations that are required
 void
 print_stage0_info(int lineno, int total_char, automaton_t *automaton) {
     printf(NOSFMT, lineno);
     printf(NOCFMT, total_char);
     printf(NPSFMT, state_num(automaton));
 }
+
+// count the total numbers of states in the automaton
+unsigned int state_num(automaton_t *automaton) {
+    return automaton->nid;
+}
+
+/* ------------------------------- STAGE 1 -----------------------------------*/
 
 // Helper function of stage 1, print the part that needs to be truncated
 void
@@ -385,10 +413,105 @@ node_t
     return most_freq_node;
 }
 
+/* ------------------------------- STAGE 2 -----------------------------------*/
 
-// count the total numbers of states in the automaton
-unsigned int state_num(automaton_t *automaton) {
-    return automaton->nid;
+// reads the number of compression needed
+int
+read_num_compression(void) {
+    int num_compression;
+    scanf("%d", &num_compression);
+    return num_compression;
 }
 
+// check if the statement is compressible
+int
+can_compress(state_t *current_state) {
+    // if current state does not have only 1 outgoing node, return false
+    if (current_state->outputs->head != current_state->outputs->tail) {
+        return 0;
+    }
+    state_t *next_state = current_state->outputs->head->state;
+    // if next state does not have one or more outgoing node, return false
+    if (next_state->outputs->head == NULL) {
+        return 0;
+    }
+    // all test passed, return true
+    return 1;
+}
+
+node_t 
+*get_compressible_node(state_t *current_state) {
+    // base case 1, if reach the leaf state or is visited, return NULL
+    if (current_state == NULL || current_state->visited == 1) {
+        return NULL;
+    }
+
+    // now its visited
+    current_state->visited = 1;
+
+    // base case 2, if the current state is compressible, return the next node
+    if (can_compress(current_state)) {
+        return current_state->outputs->head;
+    }
+
+    // if current state not compressible, depth first search in outgoing states
+    node_t *node = current_state->outputs->head;
+    while (node != NULL) {
+        node_t *new_node = get_compressible_node(node->state);
+        if (new_node != NULL) {
+            return new_node;
+        }
+        node = node->next;
+    }
+    // search done, no node is compressible from this state
+    return NULL;
+}
+
+
+// perform the compression in stage 2
+void
+do_compression(automaton_t *automaton, int num_compression) {
+    for (int i = 0; i < num_compression; i++) {
+        node_t *compress_node = get_compressible_node(automaton->ini);
+        // ... actual compression, delete node and state, combine into one
+    }
+    // ...
+}
+
+// print the information of stage 2
+void 
+print_stage2_info(automaton_t *automaton) {
+    printf(NPSFMT, state_num(automaton));
+    printf(TFQFMT, count_total_freq(automaton));
+}
+
+// counts the total frequency in the automaton
+int
+count_total_freq(automaton_t *automaton) {
+    // recursively count the frequency
+    int total_freq = 0;
+    // ...
+    return total_freq;
+}
+
+
+
 /* THE END -------------------------------------------------------------------*/
+
+/* count the total numbers of states in the automaton
+unsigned int 
+state_num(state_t *state) {
+    // base case, if reach the leaf state or is visited, end recursion
+    if (state == NULL || state->visited == 1) {
+        return 0;
+    }
+    state->visited = 1;
+    unsigned int count = 1;
+    node_t* node = state->outputs->head;
+    while (node != NULL) {
+        count += state_num(node->state);
+        node = node->next;
+    }
+    return count;
+}
+*/
