@@ -120,7 +120,13 @@ int read_num_compression(void);
 void print_stage2_info(automaton_t *automaton);
 int count_total_freq(automaton_t *automaton);
 void do_compression(automaton_t *automaton, int num_compression);
-
+int can_compress(state_t *current_state);
+node_t *get_ascii_smaller_node(state_t *current_state);
+state_t *get_compressible_state(state_t *current_state);
+void create_stage2_node(state_t *current_state, state_t *next_state);
+void delete_node(node_t *node);
+void delete_state(state_t *state);
+void free_outputs(list_t *list);
 
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
 int main(int argc, char *argv[]) {
@@ -146,17 +152,17 @@ int main(int argc, char *argv[]) {
     // 1. read the number of compression steps
     int num_compression = read_num_compression();
     DUMP_INT(num_compression);
-    // 2. do the compression
 
+    // 2. do the compression
+    do_compression(automaton, num_compression);
 
 
     // 3. output the results
     printf(SDELIM, 2);
     print_stage2_info(automaton);
     printf(MDELIM);
+
     // 4. process the prompt
-
-
 
  
 
@@ -254,8 +260,7 @@ node_t
         assert(new_node != NULL);
         new_node->str = (char*)malloc(1+sizeof(char));
         assert(new_node->str != NULL);
-        new_node->state = (state_t *)malloc(sizeof(state_t));
-        assert(new_node->state != NULL);
+        
         // initialise everything
         new_node->str[0] = ch;
         new_node->str[1] = '\0';
@@ -284,7 +289,6 @@ insert_state(automaton_t *automaton, node_t *node) {
         assert(new_state != NULL);
         new_state->outputs = (list_t *)malloc(sizeof(list_t));
         assert(new_state->outputs != NULL);
-
         node->state = new_state;
         new_state->id = automaton->nid++;
         new_state->freq = 1; // minus number of leaf states at the end 
@@ -439,8 +443,22 @@ can_compress(state_t *current_state) {
     return 1;
 }
 
-node_t 
-*get_compressible_node(state_t *current_state) {
+// return the ASCIIbetically smaller node to be first compressed
+node_t
+*get_ascii_smaller_node(state_t *current_state) {  
+    node_t *node = current_state->outputs->head;
+    node_t *smallest_node = node;
+    while (node != NULL) {
+        if (strcmp(smallest_node->str, node->str) > 0) {
+            smallest_node = node;
+        }
+        node = node->next;
+    }
+    return smallest_node;
+}
+
+state_t
+*get_compressible_state(state_t *current_state) {
     // base case 1, if reach the leaf state or is visited, return NULL
     if (current_state == NULL || current_state->visited == 1) {
         return NULL;
@@ -449,33 +467,114 @@ node_t
     // now its visited
     current_state->visited = 1;
 
-    // base case 2, if the current state is compressible, return the next node
+    // base case 2, if the current state is compressible, return state
     if (can_compress(current_state)) {
-        return current_state->outputs->head;
+        return current_state;
     }
 
     // if current state not compressible, depth first search in outgoing states
-    node_t *node = current_state->outputs->head;
+    node_t *node = get_ascii_smaller_node(current_state);
     while (node != NULL) {
-        node_t *new_node = get_compressible_node(node->state);
-        if (new_node != NULL) {
-            return new_node;
+        state_t *compress_state = get_compressible_state(node->state);
+        if (compress_state != NULL) {
+            return compress_state;
         }
         node = node->next;
     }
-    // search done, no node is compressible from this state
+    // search done, no state is compressible from this state
     return NULL;
 }
 
+void
+create_stage2_node(state_t *current_state, state_t *next_state) {
+    node_t *compress_node = current_state->outputs->head; // single output
+    node_t *outgoing_node = next_state->outputs->head; // one or more outputs
+    int first_node_created = 0; // flag to indicate if first node is created
+    while (outgoing_node != NULL) {
+        int total_str_len;
+        total_str_len = strlen(compress_node->str) + strlen(outgoing_node->str);
+
+        // allocate memory
+        node_t *new_node = (node_t *)malloc(sizeof(node_t));
+        assert(new_node != NULL);
+        new_node->str = (char *)malloc(total_str_len + 1);
+        assert(new_node->str != NULL);
+
+        // copy the string into the new node
+        strcpy(new_node->str, compress_node->str);
+        strcat(new_node->str, outgoing_node->str);
+
+        // adjust pointers
+        new_node->state = outgoing_node->state;
+        new_node->next = NULL;
+        if (!first_node_created) {
+            current_state->outputs->head = new_node;
+            current_state->outputs->tail = new_node;
+            first_node_created = 1;
+        } else {
+            current_state->outputs->tail->next = new_node;
+            current_state->outputs->tail = new_node;
+        }
+        // goes to the next node and continue to create new nodes for stage 2
+        outgoing_node = outgoing_node->next;
+    }
+}
 
 // perform the compression in stage 2
 void
 do_compression(automaton_t *automaton, int num_compression) {
     for (int i = 0; i < num_compression; i++) {
-        node_t *compress_node = get_compressible_node(automaton->ini);
-        // ... actual compression, delete node and state, combine into one
+        // get the compressible state first
+        DUMP_INT(i);
+        state_t *current_state = get_compressible_state(automaton->ini);
+        if (current_state == NULL) {
+            break;
+        }
+        state_t *next_state = current_state->outputs->head->state;
+        node_t *old_node = current_state->outputs->head;
+        // create new nodes for the current state
+        create_stage2_node(current_state, next_state);
+        
+        // delete the original nodes and state
+        delete_node(old_node);
+        delete_state(next_state);
+
+        // decrement the number of states
+        automaton->nid--;
     }
-    // ...
+}
+
+// delete a node and free the memory used for it
+void
+delete_node(node_t *node) {
+    assert(node != NULL && node->str != NULL && node->state != NULL);
+    free(node->str);
+    node->str = NULL;
+    free(node->state);
+    node->state = NULL;
+    free(node);
+}
+
+// delete a state and free the memory used for it
+void
+delete_state(state_t *state) {
+    assert(state != NULL);
+    free_outputs(state->outputs);
+    free(state);
+}
+
+// free memory used by output list
+void
+free_outputs(list_t *list) {
+    assert(list != NULL);
+    node_t *current_node, *previous_node;
+    current_node = list->head;
+    while (current_node != NULL) {
+        previous_node = current_node;
+        current_node = current_node->next;
+        delete_node(previous_node);
+    }
+    free(list);
 }
 
 // print the information of stage 2
