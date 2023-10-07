@@ -102,7 +102,9 @@ typedef struct {                // an automaton consists of
 
 
 /* Function prototypes -------------------------------------------------------*/
-int mygetchar(void);            // getchar() that skips carriage returns
+
+// Stage 0 function prototypes
+int mygetchar(void);            
 int read_input(word_t one_line);
 automaton_t *init_automaton(void);
 node_t *insert_node(state_t *current_state, char ch);
@@ -111,14 +113,18 @@ void initialise(word_t one_line);
 void insert_statement(automaton_t *automaton, char **statement, int lineno);
 void print_stage0_info(int lineno, int total_char, automaton_t *automaton);
 unsigned int state_num(automaton_t *automaton);
+char **read_stage0_statements(int *lineno, int *total_char, word_t one_line);
+
+// Stage 1 function prototypes
 node_t *find_node(state_t *state, char ch);
 void process_prompt(automaton_t *automaton, char *prompt);
 node_t *next_most_freq_node(state_t *state);
 void print_truncated_part(int index, char ch);
-char **read_stage0_lines(int *lineno, int *total_char, word_t one_line);
+
+// Stage 2 function prototypes
 int read_num_compression(void);
 void print_stage2_info(automaton_t *automaton);
-int count_total_freq(automaton_t *automaton);
+int count_total_freq(state_t *state);
 void do_compression(automaton_t *automaton, int num_compression);
 int can_compress(state_t *current_state);
 node_t *get_ascii_smaller_node(state_t *current_state);
@@ -127,6 +133,8 @@ void create_stage2_node(state_t *current_state, state_t *next_state);
 void delete_node(node_t *node);
 void delete_state(state_t *state);
 void free_outputs(list_t *list);
+void reset_states_to_nonvisited(state_t *state);
+void clear_input_buffer(void);
 
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
 int main(int argc, char *argv[]) {
@@ -134,7 +142,7 @@ int main(int argc, char *argv[]) {
     word_t one_line;
     int lineno, total_char;
     // 1.read statements from the input
-    char **all_lines = read_stage0_lines(&lineno, &total_char, one_line);
+    char **all_lines = read_stage0_statements(&lineno, &total_char, one_line);
     // 2. set up the start state and then insert states and nodes
     automaton_t *automaton = init_automaton();
     insert_statement(automaton, all_lines, lineno);
@@ -151,21 +159,21 @@ int main(int argc, char *argv[]) {
     /* Stage 2 */
     // 1. read the number of compression steps
     int num_compression = read_num_compression();
-    DUMP_INT(num_compression);
-
+    clear_input_buffer();
     // 2. do the compression
     do_compression(automaton, num_compression);
-
-
     // 3. output the results
     printf(SDELIM, 2);
     print_stage2_info(automaton);
     printf(MDELIM);
-
     // 4. process the prompt
-
- 
-
+    while (read_input(one_line)) {
+        process_prompt(automaton, one_line);
+    }
+    printf(THEEND);
+    // FREE EVERYTHING HERE!!!!!!!!!!!!!!!
+    // 1. automaton
+    // 2. one word and all words
     return EXIT_SUCCESS;        // algorithms are fun!!!
 }
 
@@ -180,8 +188,11 @@ int mygetchar() {
 }
 
 /* ------------------------------- STAGE 0 -----------------------------------*/
+
+// read the statements being inputed and store it in an array of all statements,
+// also update the line number and number of characters read
 char
-**read_stage0_lines(int *lineno, int *total_char, word_t one_line) {
+**read_stage0_statements(int *lineno, int *total_char, word_t one_line) {
     *lineno = 0;
     *total_char = 0;
     size_t current_size = MAXCHARS;
@@ -215,8 +226,8 @@ read_input(word_t one_line) {
         one_line[i++] = ch;
     }
     one_line[i] = '\0';
-    // if no input or just a single new line character, return false
-    if (i == 0 && ch == '\n') {
+    // if no input and just a single new line character or EOF, return false
+    if (i == 0 && (ch == '\n' || ch == EOF)) {
         return 0;
     }
     // input read successfully, return true
@@ -231,6 +242,7 @@ initialise(word_t one_line) {
     }
 }
 
+// initialise automaton and the first state 
 automaton_t
 *init_automaton(void) {
     automaton_t *automaton = (automaton_t *)malloc(sizeof(*automaton));
@@ -241,6 +253,9 @@ automaton_t
     assert(automaton->ini->outputs != NULL);
     automaton->ini->outputs->head = NULL;
     automaton->ini->outputs->tail = NULL;
+    automaton->ini->id = 0;
+    automaton->ini->freq = 1;
+    automaton->ini->visited = 1;
     automaton->nid = 1;
     return automaton;
 }
@@ -253,7 +268,7 @@ node_t
     while (new_node != NULL && new_node->str[0] != ch) {
         new_node = new_node->next;
     }
-
+    
     if (new_node == NULL) {
         // allocate memory for each component
         new_node = (node_t*)malloc(sizeof(node_t));
@@ -279,11 +294,11 @@ node_t
     return new_node;
 }
 
-// insert at foot
+// insert state at foot
 void
 insert_state(automaton_t *automaton, node_t *node) {
     assert(automaton != NULL);
-    // set up id and frequency
+    // if the first state, allocate memory and initialise everything
     if (node->state == NULL) {
         state_t *new_state = (state_t *)malloc(sizeof(*new_state));
         assert(new_state != NULL);
@@ -291,7 +306,7 @@ insert_state(automaton_t *automaton, node_t *node) {
         assert(new_state->outputs != NULL);
         node->state = new_state;
         new_state->id = automaton->nid++;
-        new_state->freq = 1; // minus number of leaf states at the end 
+        new_state->freq = 1;
         new_state->visited = 0;
         new_state->outputs->head = new_state->outputs->tail = NULL;
     } else {
@@ -344,6 +359,7 @@ print_truncated_part(int index, char ch) {
     printf("\n");
 }
 
+// process through the prompt, do the trace through automaton, and print result
 void
 process_prompt(automaton_t *automaton, char *prompt) {
     // 1. replay the prompt
@@ -362,7 +378,6 @@ process_prompt(automaton_t *automaton, char *prompt) {
             return;
         }
         printf("%c", prompt[i]);
-        current_state->freq++;
         current_state = next_node->state;
     }
     
@@ -427,6 +442,13 @@ read_num_compression(void) {
     return num_compression;
 }
 
+// clear the input buffer after read the number of compression
+void
+clear_input_buffer(void) {
+    char c;
+    while((c = mygetchar()) != '\n' && c != EOF); 
+}
+
 // check if the statement is compressible
 int
 can_compress(state_t *current_state) {
@@ -443,7 +465,7 @@ can_compress(state_t *current_state) {
     return 1;
 }
 
-// return the ASCIIbetically smaller node to be first compressed
+// helper function to get the ASCIIbetically smaller node
 node_t
 *get_ascii_smaller_node(state_t *current_state) {  
     node_t *node = current_state->outputs->head;
@@ -457,6 +479,7 @@ node_t
     return smallest_node;
 }
 
+// helper function to get the compressible state
 state_t
 *get_compressible_state(state_t *current_state) {
     // base case 1, if reach the leaf state or is visited, return NULL
@@ -485,6 +508,7 @@ state_t
     return NULL;
 }
 
+// create the new node for stage 2 to connect
 void
 create_stage2_node(state_t *current_state, state_t *next_state) {
     node_t *compress_node = current_state->outputs->head; // single output
@@ -525,7 +549,6 @@ void
 do_compression(automaton_t *automaton, int num_compression) {
     for (int i = 0; i < num_compression; i++) {
         // get the compressible state first
-        DUMP_INT(i);
         state_t *current_state = get_compressible_state(automaton->ini);
         if (current_state == NULL) {
             break;
@@ -534,14 +557,12 @@ do_compression(automaton_t *automaton, int num_compression) {
         node_t *old_node = current_state->outputs->head;
         // create new nodes for the current state
         create_stage2_node(current_state, next_state);
-        
         // delete the original nodes and state
         delete_node(old_node);
         delete_state(next_state);
-
-        // decrement the number of states
-        automaton->nid--;
     }
+    // decrement the number of states
+    automaton->nid -= num_compression;
 }
 
 // delete a node and free the memory used for it
@@ -577,40 +598,49 @@ free_outputs(list_t *list) {
     free(list);
 }
 
+// reset all the states to non-visited for frequency count
+void reset_states_to_nonvisited(state_t *state) {
+    // base case: if the state is NULL or already non-visited, return
+    if (state == NULL || state->visited == 0) {
+        return;
+    }
+
+    // reset the current state's visited flag
+    state->visited = 0;
+
+    // Recursively reset the visited flag of the states
+    node_t *node = state->outputs->head;
+    while (node != NULL) {
+        reset_states_to_nonvisited(node->state);
+        node = node->next;
+    }
+}
+
 // print the information of stage 2
 void 
 print_stage2_info(automaton_t *automaton) {
     printf(NPSFMT, state_num(automaton));
-    printf(TFQFMT, count_total_freq(automaton));
+    reset_states_to_nonvisited(automaton->ini);
+    printf(TFQFMT, count_total_freq(automaton->ini));
 }
 
 // counts the total frequency in the automaton
 int
-count_total_freq(automaton_t *automaton) {
-    // recursively count the frequency
-    int total_freq = 0;
-    // ...
-    return total_freq;
-}
-
-
-
-/* THE END -------------------------------------------------------------------*/
-
-/* count the total numbers of states in the automaton
-unsigned int 
-state_num(state_t *state) {
+count_total_freq(state_t *state) {
     // base case, if reach the leaf state or is visited, end recursion
     if (state == NULL || state->visited == 1) {
         return 0;
     }
+
     state->visited = 1;
-    unsigned int count = 1;
-    node_t* node = state->outputs->head;
+    int total_freq = state->freq;
+    node_t *node = state->outputs->head;
     while (node != NULL) {
-        count += state_num(node->state);
+        total_freq += count_total_freq(node->state);
         node = node->next;
     }
-    return count;
+    return total_freq;
 }
-*/
+
+/* THE END -------------------------------------------------------------------*/
+
