@@ -52,14 +52,14 @@
 #define NPSFMT "Number of states: %d\n"                     // no. of states
 #define TFQFMT "Total frequency: %d\n"                      // total frequency
 
-#define CRTRNC '\r'                             // carriage return character
-#define MAXCHARS 1000  // maximum characters per word
-#define ELLIPSE "." // ellipse used in stage 1
-#define ELLIPSES "..." // ellipses used in stage 1
-#define TRUNCATE 37 // number of characters to be truncated in stage 1
+#define CRTRNC '\r'            // carriage return character
+#define MAXCHARS 1000         // maximum characters per word
+#define ELLIPSE "."           // ellipse used in stage 1
+#define ELLIPSES "..."       // ellipses used in stage 1
+#define TRUNCATE 37          // number of characters to be truncated in stage 1
 
 /* Debugging area */
-#define DEBUG 1
+#define DEBUG 0
 #if DEBUG
 #define DUMP_DBL(x) printf("line %d: %s = %.5f\n", __LINE__, #x, x)
 #define DUMP_INT(x) printf("line %d: %s = %d\n", __LINE__, #x, x)
@@ -117,7 +117,8 @@ char **read_stage0_statements(int *lineno, int *total_char, word_t one_line);
 
 // Stage 1 function prototypes
 node_t *find_node(state_t *state, char ch);
-void process_prompt(automaton_t *automaton, char *prompt);
+void process_one_prompt(automaton_t *automaton, char *prompt);
+void process_all_prompts(automaton_t *automaton, word_t one_line);
 node_t *next_most_freq_node(state_t *state);
 void print_truncated_part(int index, char ch);
 
@@ -130,11 +131,15 @@ int can_compress(state_t *current_state);
 node_t *get_ascii_smaller_node(state_t *current_state);
 state_t *get_compressible_state(state_t *current_state);
 void create_stage2_node(state_t *current_state, state_t *next_state);
-void delete_node(node_t *node);
-void delete_state(state_t *state);
+void free_node(node_t *node);
+void free_state(state_t *state);
 void free_outputs(list_t *list);
 void reset_states_to_nonvisited(state_t *state);
 void clear_input_buffer(void);
+void free_automaton(automaton_t *automaton);
+void free_all_states(state_t *state);
+void free_all_lines(char **all_lines, int lineno);
+
 
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
 int main(int argc, char *argv[]) {
@@ -152,9 +157,8 @@ int main(int argc, char *argv[]) {
 
     /* Stage 1 */
     printf(SDELIM, 1);
-    while (read_input(one_line)) {
-        process_prompt(automaton, one_line);
-    }
+    // do the process of all prompts
+    process_all_prompts(automaton, one_line);
 
     /* Stage 2 */
     // 1. read the number of compression steps
@@ -166,14 +170,14 @@ int main(int argc, char *argv[]) {
     printf(SDELIM, 2);
     print_stage2_info(automaton);
     printf(MDELIM);
-    // 4. process the prompt
-    while (read_input(one_line)) {
-        process_prompt(automaton, one_line);
-    }
+    // 4. do the process of all prompts
+    process_all_prompts(automaton, one_line);
+
+    // finally, free the automaton and the all lines array for reading input
+    free_automaton(automaton);
+    free_all_lines(all_lines, lineno);
+    // print the end message, and now we are done!
     printf(THEEND);
-    // FREE EVERYTHING HERE!!!!!!!!!!!!!!!
-    // 1. automaton
-    // 2. one word and all words
     return EXIT_SUCCESS;        // algorithms are fun!!!
 }
 
@@ -199,11 +203,13 @@ char
     char **all_lines = (char **)malloc(current_size * sizeof(*all_lines));
     assert(all_lines != NULL);
     while (read_input(one_line)) {
+        // not enough memory, need to allocate more
         if (*lineno == current_size) {
             current_size *= 2;
             all_lines = realloc(all_lines, current_size * sizeof(*all_lines));
             assert(all_lines != NULL);
         }
+        // we have enough memory, continues to read and update some info
         all_lines[*lineno] = (char *)malloc(strlen(one_line) + 1);
         assert(all_lines[*lineno] != NULL);
         strcpy(all_lines[*lineno], one_line);
@@ -245,12 +251,14 @@ initialise(word_t one_line) {
 // initialise automaton and the first state 
 automaton_t
 *init_automaton(void) {
+    // allocate memories
     automaton_t *automaton = (automaton_t *)malloc(sizeof(*automaton));
     assert(automaton != NULL);
     automaton->ini = (state_t *)malloc(sizeof(state_t));
     assert(automaton->ini != NULL);
     automaton->ini->outputs = (list_t *)malloc(sizeof(list_t));
     assert(automaton->ini->outputs != NULL);
+    // initialise the pointers and its info
     automaton->ini->outputs->head = NULL;
     automaton->ini->outputs->tail = NULL;
     automaton->ini->id = 0;
@@ -342,7 +350,7 @@ unsigned int state_num(automaton_t *automaton) {
 
 /* ------------------------------- STAGE 1 -----------------------------------*/
 
-// Helper function of stage 1, print the part that needs to be truncated
+// helper function of stage 1, print the part that needs to be truncated
 void
 print_truncated_part(int index, char ch) {
     printf("%c", ch);
@@ -361,7 +369,7 @@ print_truncated_part(int index, char ch) {
 
 // process through the prompt, do the trace through automaton, and print result
 void
-process_prompt(automaton_t *automaton, char *prompt) {
+process_one_prompt(automaton_t *automaton, char *prompt) {
     // 1. replay the prompt
     state_t *current_state = automaton->ini;
     int i;
@@ -395,6 +403,14 @@ process_prompt(automaton_t *automaton, char *prompt) {
     printf("\n");
 }
 
+// process through all the prompts by processing one prompt at a time
+void
+process_all_prompts(automaton_t *automaton, word_t one_line) {
+    while (read_input(one_line)) {
+        process_one_prompt(automaton, one_line);
+    }
+}
+
 // find the correct node given the input characters
 node_t
 *find_node(state_t *state, char ch) {
@@ -418,7 +434,8 @@ node_t
     node_t *current_node = state->outputs->head;
     node_t *most_freq_node = current_node;
     while (current_node != NULL) {
-        // compare frequency
+        // compare frequency, if current node has a higher freq, make it to be
+        // the most freq node
         if (current_node->state->freq > most_freq_node->state->freq) {
             most_freq_node = current_node;
         } 
@@ -471,6 +488,8 @@ node_t
     node_t *node = current_state->outputs->head;
     node_t *smallest_node = node;
     while (node != NULL) {
+        // if the current node is smaller than the smallest node, update it to
+        // be the smallest node
         if (strcmp(smallest_node->str, node->str) > 0) {
             smallest_node = node;
         }
@@ -558,8 +577,8 @@ do_compression(automaton_t *automaton, int num_compression) {
         // create new nodes for the current state
         create_stage2_node(current_state, next_state);
         // delete the original nodes and state
-        delete_node(old_node);
-        delete_state(next_state);
+        free_node(old_node);
+        free_state(next_state);
     }
     // decrement the number of states
     automaton->nid -= num_compression;
@@ -567,35 +586,85 @@ do_compression(automaton_t *automaton, int num_compression) {
 
 // delete a node and free the memory used for it
 void
-delete_node(node_t *node) {
+free_node(node_t *node) {
+    // check input
     assert(node != NULL && node->str != NULL && node->state != NULL);
+    // now free everthing inside the node and itself
     free(node->str);
     node->str = NULL;
-    free(node->state);
     node->state = NULL;
     free(node);
+    node = NULL;
 }
 
 // delete a state and free the memory used for it
 void
-delete_state(state_t *state) {
+free_state(state_t *state) {
+    // check input
     assert(state != NULL);
+    // now free everthing inside the state and itself
     free_outputs(state->outputs);
     free(state);
+    state = NULL;
 }
 
 // free memory used by output list
 void
 free_outputs(list_t *list) {
+    // check input
     assert(list != NULL);
     node_t *current_node, *previous_node;
     current_node = list->head;
     while (current_node != NULL) {
         previous_node = current_node;
         current_node = current_node->next;
-        delete_node(previous_node);
+        free_node(previous_node);
     }
     free(list);
+    list = NULL;
+}
+
+// free all the states in an automaton
+void
+free_all_states(state_t *state) {
+    // if reach leaf state or is visited, end recursion
+    if (state == NULL || state->visited == 1) {
+        return;
+    }
+    // now its visited
+    state->visited = 1;
+
+    // do the traverse recursively
+    node_t *node = state->outputs->head;
+    while (node != NULL) {
+        free_all_states(node->state);
+        node = node->next;
+    }
+    // free the outputs and the state itself
+    free_outputs(state->outputs);
+    free(state);
+}
+
+// free the whole automaton
+void
+free_automaton(automaton_t *automaton) {
+    // check input
+    assert(automaton != NULL);
+    // now free everthing in the automaton and itself
+    free_state(automaton->ini);
+    free(automaton);
+}
+
+// free all lines that used for reading input
+void
+free_all_lines(char **all_lines, int lineno) {
+    // check input
+    assert(all_lines != NULL);
+    // now free everthing single line inside all liens and itself
+    for (int i = 0; i < lineno; i++) {
+        free(all_lines[i]);
+    }
+    free(all_lines);
 }
 
 // reset all the states to non-visited for frequency count
@@ -608,7 +677,7 @@ void reset_states_to_nonvisited(state_t *state) {
     // reset the current state's visited flag
     state->visited = 0;
 
-    // Recursively reset the visited flag of the states
+    // recursively reset the visited flag of the states
     node_t *node = state->outputs->head;
     while (node != NULL) {
         reset_states_to_nonvisited(node->state);
@@ -631,8 +700,10 @@ count_total_freq(state_t *state) {
     if (state == NULL || state->visited == 1) {
         return 0;
     }
-
+    // now its visited 
     state->visited = 1;
+
+    // recursively traverse the automaton and count total frequency
     int total_freq = state->freq;
     node_t *node = state->outputs->head;
     while (node != NULL) {
@@ -643,4 +714,3 @@ count_total_freq(state_t *state) {
 }
 
 /* THE END -------------------------------------------------------------------*/
-
